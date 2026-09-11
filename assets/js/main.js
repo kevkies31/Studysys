@@ -26,3 +26,31 @@ document.querySelectorAll('form').forEach(function (form) {
     btn.disabled = true;
   });
 });
+
+// ---------- Dark / Light theme ----------
+(function () {
+  const saved = localStorage.getItem('studysys_theme') || 'dark';
+  if (saved === 'light') document.documentElement.setAttribute('data-theme', 'light');
+
+  const btn = document.getElementById('themeToggleBtn');
+  if (!btn) return; // login/signup pages don't have the sidebar toggle
+
+  function updateLabel() {
+    const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+    document.getElementById('themeIcon').textContent = isLight ? '☀️' : '🌙';
+    document.getElementById('themeLabel').textContent = isLight ? 'Light Mode' : 'Dark Mode';
+  }
+  updateLabel();
+
+  btn.addEventListener('click', function () {
+    const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+    if (isLight) {
+      document.documentElement.removeAttribute('data-theme');
+      localStorage.setItem('studysys_theme', 'dark');
+    } else {
+      document.documentElement.setAttribute('data-theme', 'light');
+      localStorage.setItem('studysys_theme', 'light');
+    }
+    updateLabel();
+  });
+})();

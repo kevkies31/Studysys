@@ -12,5 +12,13 @@ $activePage = $activePage ?? '';
   </nav>
   <div class="logout">
     <a href="logout.php">&larr; Log out</a>
+    <div class="theme-toggle">
+      
+  <button id="themeToggleBtn" type="button">
+    <span id="themeIcon">🌙</span> <span id="themeLabel">Dark Mode</span>
+  </button>
+
+  
+</div>
   </div>
 </div>

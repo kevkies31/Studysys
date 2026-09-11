@@ -1,3 +1,18 @@
+[data-theme="light"] {
+  --bg: #f4f5f8;
+  --panel: #ffffff;
+  --panel-light: #eef0f5;
+  --border: #dde1e8;
+  --text: #1c1e26;
+  --text-dim: #6b7180;
+  --accent: #6366f1;
+  --accent-hover: #4f46e5;
+  --success: #16a34a;
+  --danger: #dc2626;
+}
+
+
+
 :root {
   --bg: #0f1117;
   --panel: #171a23;
@@ -10,6 +25,7 @@
   --success: #22c55e;
   --danger: #ef4444;
   --radius: 10px;
+  
 }
 
 * { box-sizing: border-box; }
@@ -287,3 +303,95 @@ a, button, input, .card, .sidebar nav a {
   text-align: center;
   padding: 32px 0;
 }
+
+
+/* ---------- Calendar ---------- */
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr)); /* minmax(0, 1fr) lets columns actually shrink */
+  gap: 4px;
+}
+
+.cal-head {
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-dim);
+  padding: 6px 0;
+  text-transform: uppercase;
+}
+
+.cal-cell {
+  background: var(--panel-light);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  min-height: 70px;
+  max-height: 110px;
+  overflow-y: auto;
+  min-width: 0; /* allows text inside to truncate instead of forcing the column wider */
+  padding: 6px;
+  font-size: 11px;
+}
+.cal-empty {
+  background: transparent;
+  border: none;
+}
+
+.cal-today {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.cal-daynum {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+
+.cal-today .cal-daynum {
+  color: var(--accent);
+}
+
+.cal-chip {
+  border-radius: 4px;
+  padding: 2px 5px;
+  margin-bottom: 3px;
+  font-size: 10px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.cal-chip-class {
+  background: rgba(99, 102, 241, 0.18);
+  color: #a5a9f5;
+}
+
+.cal-chip-event {
+  background: rgba(34, 197, 94, 0.18);
+  color: #86efac;
+}
+
+.theme-toggle {
+  margin-top: 16px;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+
+.theme-toggle button {
+  width: 100%;
+  background: var(--panel-light);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 9px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.theme-toggle button:hover { color: var(--text); border-color: var(--accent); }
+
