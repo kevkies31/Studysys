@@ -6,52 +6,67 @@ $userId = $_SESSION['user_id'];
 $error = '';
 $success = '';
 
-// ---------- Handle: Add Transaction ----------
+// ---------- Handle: Add or Edit Transaction ----------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_transaction') {
-    $amount = trim($_POST['amount'] ?? '');
-    $type = $_POST['type'] ?? '';
-    $categoryId = $_POST['category_id'] ?: null;
-    $note = trim($_POST['note'] ?? '');
-    $date = $_POST['txn_date'] ?? date('Y-m-d');
-
-    if (!is_numeric($amount) || $amount <= 0) {
-        $error = "Enter a valid amount greater than 0.";
-    } elseif (!in_array($type, ['income', 'expense'])) {
-        $error = "Invalid transaction type.";
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+        $error = 'Invalid request. Please try again.';
     } else {
-        $stmt = $pdo->prepare("INSERT INTO transactions (user_id, category_id, amount, type, note, txn_date) VALUES (?, ?, ?, ?, ?, ?)");
-        $stmt->execute([$userId, $categoryId, $amount, $type, $note, $date]);
-        header('Location: budget.php?added=1');
-        exit;
+        $amount = trim($_POST['amount'] ?? '');
+        $type = $_POST['type'] ?? '';
+        $categoryId = $_POST['category_id'] ?: null;
+        $note = trim($_POST['note'] ?? '');
+        $date = $_POST['txn_date'] ?? date('Y-m-d');
+        $editTxnId = $_POST['edit_txn_id'] ?? '';
+
+        if (!is_numeric($amount) || $amount <= 0) {
+            $error = "Enter a valid amount greater than 0.";
+        } elseif (!in_array($type, ['income', 'expense'])) {
+            $error = "Invalid transaction type.";
+        } else {
+            if ($editTxnId !== '') {
+                $stmt = $pdo->prepare("UPDATE transactions SET category_id=?, amount=?, type=?, note=?, txn_date=? WHERE id=? AND user_id=?");
+                $stmt->execute([$categoryId, $amount, $type, $note, $date, (int)$editTxnId, $userId]);
+                header('Location: budget.php?updated=1');
+            } else {
+                $stmt = $pdo->prepare("INSERT INTO transactions (user_id, category_id, amount, type, note, txn_date) VALUES (?, ?, ?, ?, ?, ?)");
+                $stmt->execute([$userId, $categoryId, $amount, $type, $note, $date]);
+                header('Location: budget.php?added=1');
+            }
+            exit;
+        }
     }
 }
 
 // ---------- Handle: Add Category ----------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_category') {
-    $name = trim($_POST['cat_name'] ?? '');
-    $limit = $_POST['cat_limit'] ?: 0;
-
-    if ($name === '') {
-        $error = "Category name is required.";
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+        $error = 'Invalid request. Please try again.';
     } else {
-        $stmt = $pdo->prepare("INSERT INTO budget_categories (user_id, name, monthly_limit) VALUES (?, ?, ?)");
-        $stmt->execute([$userId, $name, $limit]);
-        header('Location: budget.php?cat_added=1');
-        exit;
+        $name = trim($_POST['cat_name'] ?? '');
+        $limit = $_POST['cat_limit'] ?: 0;
+
+        if ($name === '') {
+            $error = "Category name is required.";
+        } else {
+            $stmt = $pdo->prepare("INSERT INTO budget_categories (user_id, name, monthly_limit) VALUES (?, ?, ?)");
+            $stmt->execute([$userId, $name, $limit]);
+            header('Location: budget.php?cat_added=1');
+            exit;
+        }
     }
 }
 
 /// ---------- Handle: Delete Transaction ----------
-if (isset($_GET['delete'])) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_transaction' && verifyCsrfToken($_POST['csrf_token'] ?? '')) {
     // Save the transaction before deleting so we can offer Undo
     $lookup = $pdo->prepare("SELECT * FROM transactions WHERE id = ? AND user_id = ?");
-    $lookup->execute([(int)$_GET['delete'], $userId]);
+    $lookup->execute([(int)($_POST['transaction_id'] ?? 0), $userId]);
     $toDelete = $lookup->fetch();
 
     if ($toDelete) {
         $_SESSION['last_deleted_txn'] = $toDelete;
         $stmt = $pdo->prepare("DELETE FROM transactions WHERE id = ? AND user_id = ?");
-        $stmt->execute([(int)$_GET['delete'], $userId]);
+        $stmt->execute([(int)($_POST['transaction_id'] ?? 0), $userId]);
     }
     header('Location: budget.php?deleted=1');
     exit;
@@ -70,19 +85,28 @@ if (isset($_GET['undo']) && isset($_SESSION['last_deleted_txn'])) {
 }
 
 // ---------- Handle: Delete Category ----------
-if (isset($_GET['delete_cat'])) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_category' && verifyCsrfToken($_POST['csrf_token'] ?? '')) {
     $stmt = $pdo->prepare("DELETE FROM budget_categories WHERE id = ? AND user_id = ?");
-    $stmt->execute([(int)$_GET['delete_cat'], $userId]);
+    $stmt->execute([(int)($_POST['category_id'] ?? 0), $userId]);
     header('Location: budget.php?cat_deleted=1');
     exit;
 }
 
 if (isset($_GET['added'])) $success = "Transaction added.";
+if (isset($_GET['updated'])) $success = "Transaction updated.";
 if (isset($_GET['restored'])) $success = "Transaction restored.";
 if (isset($_GET['cat_added'])) $success = "Category added.";
 if (isset($_GET['cat_deleted'])) $success = "Category deleted. Its transactions are kept, just marked uncategorized.";
 $showUndo = isset($_GET['deleted']) && isset($_SESSION['last_deleted_txn']);
 if (isset($_GET['deleted'])) $success = "Transaction deleted.";
+
+// ---------- If editing a transaction, load it ----------
+$editTxn = null;
+if (isset($_GET['edit'])) {
+    $stmt = $pdo->prepare("SELECT * FROM transactions WHERE id = ? AND user_id = ?");
+    $stmt->execute([(int)$_GET['edit'], $userId]);
+    $editTxn = $stmt->fetch();
+}
 
 // ---------- Fetch data ----------
 $categories = $pdo->prepare("SELECT * FROM budget_categories WHERE user_id = ? ORDER BY name ASC");
@@ -99,6 +123,19 @@ $txnStmt = $pdo->prepare("
 ");
 $txnStmt->execute([$userId]);
 $transactions = $txnStmt->fetchAll();
+
+// ---------- Handle: Export CSV ----------
+if (isset($_GET['export_csv'])) {
+    header('Content-Type: text/csv');
+    header('Content-Disposition: attachment; filename="budget_' . date('Y-m') . '.csv"');
+    $output = fopen('php://output', 'w');
+    fputcsv($output, ['Date', 'Type', 'Category', 'Amount', 'Note']);
+    foreach ($transactions as $t) {
+        fputcsv($output, [$t['txn_date'], $t['type'], $t['category_name'] ?? '', $t['amount'], $t['note']]);
+    }
+    fclose($output);
+    exit;
+}
 
 // This month totals
 $incomeStmt = $pdo->prepare("SELECT COALESCE(SUM(amount),0) AS total FROM transactions WHERE user_id = ? AND type = 'income' AND MONTH(txn_date) = MONTH(CURDATE()) AND YEAR(txn_date) = YEAR(CURDATE())");
@@ -129,7 +166,7 @@ $categorySpend = $catSpendStmt->fetchAll();
 <head>
 <meta charset="UTF-8">
 <title>Budget - StudySys</title>
-<link rel="stylesheet" href="assets/css/style.css">
+<link rel="stylesheet" href="assets/css/style.css?v=2">
 </head>
 <body>
 <div class="app">
@@ -166,27 +203,39 @@ $categorySpend = $catSpendStmt->fetchAll();
         <div class="label">Balance</div>
         <div class="value"><?= $balance < 0 ? '-' : '' ?>₱<?= number_format(abs($balance), 2) ?></div>
       </div>
+      <div class="card">
+        <div class="label">Total Budget</div>
+        <div class="value">₱<?= number_format(array_sum(array_column($categorySpend, 'monthly_limit')), 0) ?></div>
+      </div>
+    </div>
+
+    <div style="margin-bottom:20px;">
+      <a href="budget.php?export_csv=1" class="btn" style="width:auto; padding:8px 16px; background:var(--panel-light); color:var(--text); display:inline-flex; align-items:center; gap:6px;">
+        Export CSV
+      </a>
     </div>
 
     <div class="grid-cards" style="grid-template-columns: 1fr 1.4fr; align-items:start;">
 
-      <!-- Add Transaction -->
+      <!-- Add/Edit Transaction -->
       <div class="panel-block">
-        <h2>Add Transaction</h2>
+        <h2><?= $editTxn ? 'Edit Transaction' : 'Add Transaction' ?></h2>
         <form method="POST">
           <input type="hidden" name="action" value="add_transaction">
+          <input type="hidden" name="csrf_token" value="<?= generateCsrfToken() ?>">
+          <input type="hidden" name="edit_txn_id" value="<?= $editTxn ? $editTxn['id'] : '' ?>">
 
           <div class="field">
             <label>Type</label>
             <select name="type" required>
-              <option value="expense">Expense</option>
-              <option value="income">Income</option>
+              <option value="expense" <?= ($editTxn && $editTxn['type'] === 'expense') ? 'selected' : '' ?>>Expense</option>
+              <option value="income" <?= ($editTxn && $editTxn['type'] === 'income') ? 'selected' : '' ?>>Income</option>
             </select>
           </div>
 
           <div class="field">
             <label>Amount (₱)</label>
-            <input type="number" step="0.01" min="0.01" name="amount" required>
+            <input type="number" step="0.01" min="0.01" name="amount" required value="<?= $editTxn ? htmlspecialchars($editTxn['amount']) : '' ?>">
           </div>
 
           <div class="field">
@@ -194,25 +243,29 @@ $categorySpend = $catSpendStmt->fetchAll();
             <select name="category_id">
               <option value="">— None —</option>
               <?php foreach ($categories as $c): ?>
-                <option value="<?= $c['id'] ?>"><?= htmlspecialchars($c['name']) ?></option>
+                <option value="<?= $c['id'] ?>" <?= ($editTxn && $editTxn['category_id'] == $c['id']) ? 'selected' : '' ?>><?= htmlspecialchars($c['name']) ?></option>
               <?php endforeach; ?>
             </select>
           </div>
 
           <div class="field">
             <label>Note</label>
-            <input type="text" name="note" placeholder="e.g. Jeepney fare">
+            <input type="text" name="note" placeholder="e.g. Jeepney fare" value="<?= $editTxn ? htmlspecialchars($editTxn['note']) : '' ?>">
           </div>
 
           <div class="field">
             <label>Date</label>
-            <input type="date" name="txn_date" value="<?= date('Y-m-d') ?>" required>
+            <input type="date" name="txn_date" value="<?= $editTxn ? htmlspecialchars($editTxn['txn_date']) : date('Y-m-d') ?>" required>
           </div>
 
           <button type="submit" class="btn">
             <span class="spinner"></span>
-            <span class="btn-label">Add Transaction</span>
+            <span class="btn-label"><?= $editTxn ? 'Update Transaction' : 'Add Transaction' ?></span>
           </button>
+
+          <?php if ($editTxn): ?>
+            <a href="budget.php" class="btn" style="background:var(--panel-light); color:var(--text-dim); margin-top:8px;">Cancel Edit</a>
+          <?php endif; ?>
         </form>
 
         <hr style="border-color:var(--border); margin:24px 0;">
@@ -220,6 +273,7 @@ $categorySpend = $catSpendStmt->fetchAll();
         <h2>Add Category</h2>
         <form method="POST">
           <input type="hidden" name="action" value="add_category">
+          <input type="hidden" name="csrf_token" value="<?= generateCsrfToken() ?>">
           <div class="field">
             <label>Category Name</label>
             <input type="text" name="cat_name" placeholder="e.g. Print/Photocopy" required>
@@ -249,12 +303,16 @@ $categorySpend = $catSpendStmt->fetchAll();
               <div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:5px;">
   <span>
     <?= htmlspecialchars($cs['name']) ?>
-    <a href="budget.php?delete_cat=<?= $cs['id'] ?>"
-       class="del-link"
-       style="margin-left:4px;"
-       onclick="return confirm('Delete category \'<?= htmlspecialchars($cs['name'], ENT_QUOTES) ?>\'? Its transactions will stay but become uncategorized.');">✕</a>
+                    <form method="POST" style="display:inline; margin-left:4px;">
+                      <input type="hidden" name="action" value="delete_category">
+                      <input type="hidden" name="category_id" value="<?= $cs['id'] ?>">
+                      <input type="hidden" name="csrf_token" value="<?= generateCsrfToken() ?>">
+                      <button type="submit" class="del-link" style="background:none; border:0; padding:0;" onclick="return confirm('Delete category \'<?= htmlspecialchars($cs['name'], ENT_QUOTES) ?>\'? Its transactions will stay but become uncategorized.');">✕</button>
+                    </form>
   </span>
-  <span style="color:<?= $over ? 'var(--danger)' : 'var(--text-dim)' ?>"></span>
+  <span style="color:<?= $over ? 'var(--danger)' : 'var(--text-dim)' ?>">
+                  ₱<?= number_format($cs['spent'], 0) ?> / ₱<?= number_format($cs['monthly_limit'], 0) ?>
+                </span>
                 <?php if ($cs['monthly_limit'] > 0): ?>
                 <div class="bar-track">
                   <div class="bar-fill <?= $over ? 'bar-over' : '' ?>" style="width: <?= $pct ?>%;"></div>
@@ -293,9 +351,13 @@ $categorySpend = $catSpendStmt->fetchAll();
                       <?= $t['type'] === 'income' ? '+' : '-' ?>₱<?= number_format($t['amount'], 2) ?>
                     </td>
                     <td>
-                      <a href="budget.php?delete=<?= $t['id'] ?>"
-                         class="del-link"
-                         onclick="return confirm('Delete this transaction?');">✕</a>
+                      <a href="budget.php?edit=<?= $t['id'] ?>" class="del-link" style="color:var(--accent); margin-right:6px;">Edit</a>
+                      <form method="POST" style="display:inline;">
+                        <input type="hidden" name="action" value="delete_transaction">
+                        <input type="hidden" name="transaction_id" value="<?= $t['id'] ?>">
+                        <input type="hidden" name="csrf_token" value="<?= generateCsrfToken() ?>">
+                        <button type="submit" class="del-link" style="background:none; border:0; padding:0;" onclick="return confirm('Delete this transaction?');">✕</button>
+                      </form>
                     </td>
                   </tr>
                 <?php endforeach; ?>
@@ -307,6 +369,6 @@ $categorySpend = $catSpendStmt->fetchAll();
     </div>
   </div>
 </div>
-<script src="assets/js/main.js"></script>
+<script src="assets/js/main.js?v=3"></script>
 </body>
 </html>

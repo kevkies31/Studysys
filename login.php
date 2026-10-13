@@ -9,12 +9,16 @@ if (isLoggedIn()) {
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $result = loginUser($pdo, $_POST['email'] ?? '', $_POST['password'] ?? '');
-    if ($result === true) {
-        header('Location: dashboard.php');
-        exit;
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+        $error = 'Invalid request. Please try again.';
     } else {
-        $error = $result;
+        $result = loginUser($pdo, $_POST['email'] ?? '', $_POST['password'] ?? '');
+        if ($result === true) {
+            header('Location: dashboard.php');
+            exit;
+        } else {
+            $error = $result;
+        }
     }
 }
 ?>
@@ -23,7 +27,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
 <meta charset="UTF-8">
 <title>Log In - StudySys</title>
-<link rel="stylesheet" href="assets/css/style.css">
+<link rel="stylesheet" href="assets/css/style.css?v=2">
 </head>
 <body>
   <div class="auth-wrap">
@@ -36,6 +40,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <?php endif; ?>
 
       <form method="POST">
+        <input type="hidden" name="csrf_token" value="<?= generateCsrfToken() ?>">
         <div class="field">
           <label>Email</label>
           <input type="email" name="email" value="<?= htmlspecialchars($_POST['email'] ?? '') ?>" required>
@@ -55,6 +60,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       </div>
     </div>
   </div>
-  <script src="assets/js/main.js"></script>
+  <script src="assets/js/main.js?v=3"></script>
 </body>
 </html>

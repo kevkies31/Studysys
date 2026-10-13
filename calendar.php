@@ -8,25 +8,29 @@ $success = '';
 
 // ---------- Handle: Add manual event ----------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_event') {
-    $title = trim($_POST['title'] ?? '');
-    $eventDate = $_POST['event_date'] ?? '';
-    $eventTime = $_POST['event_time'] ?: null;
-    $description = trim($_POST['description'] ?? '');
-
-    if ($title === '' || $eventDate === '') {
-        $error = "Title and date are required.";
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+        $error = 'Invalid request. Please try again.';
     } else {
-        $stmt = $pdo->prepare("INSERT INTO calendar_events (user_id, source, title, event_date, event_time, description) VALUES (?, 'manual', ?, ?, ?, ?)");
-        $stmt->execute([$userId, $title, $eventDate, $eventTime, $description]);
-        header('Location: calendar.php?added=1&month=' . date('n', strtotime($eventDate)) . '&year=' . date('Y', strtotime($eventDate)));
-        exit;
+        $title = trim($_POST['title'] ?? '');
+        $eventDate = $_POST['event_date'] ?? '';
+        $eventTime = $_POST['event_time'] ?: null;
+        $description = trim($_POST['description'] ?? '');
+
+        if ($title === '' || $eventDate === '') {
+            $error = "Title and date are required.";
+        } else {
+            $stmt = $pdo->prepare("INSERT INTO calendar_events (user_id, source, title, event_date, event_time, description) VALUES (?, 'manual', ?, ?, ?, ?)");
+            $stmt->execute([$userId, $title, $eventDate, $eventTime, $description]);
+            header('Location: calendar.php?added=1&month=' . date('n', strtotime($eventDate)) . '&year=' . date('Y', strtotime($eventDate)));
+            exit;
+        }
     }
 }
 
 // ---------- Handle: Delete manual event ----------
-if (isset($_GET['delete_event'])) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_event' && verifyCsrfToken($_POST['csrf_token'] ?? '')) {
     $stmt = $pdo->prepare("DELETE FROM calendar_events WHERE id = ? AND user_id = ? AND source = 'manual'");
-    $stmt->execute([(int)$_GET['delete_event'], $userId]);
+    $stmt->execute([(int)($_POST['event_id'] ?? 0), $userId]);
     header('Location: calendar.php?deleted=1');
     exit;
 }
@@ -74,7 +78,7 @@ $dayCodeMap = [1=>'MON', 2=>'TUE', 3=>'WED', 4=>'THU', 5=>'FRI', 6=>'SAT', 7=>'S
 <head>
 <meta charset="UTF-8">
 <title>Calendar - StudySys</title>
-<link rel="stylesheet" href="assets/css/style.css">
+<link rel="stylesheet" href="assets/css/style.css?v=2">
 </head>
 <body>
 <div class="app">
@@ -131,9 +135,12 @@ $dayCodeMap = [1=>'MON', 2=>'TUE', 3=>'WED', 4=>'THU', 5=>'FRI', 6=>'SAT', 7=>'S
               <?php foreach ($eventsToday as $e): ?>
                 <div class="cal-chip cal-chip-event" title="<?= htmlspecialchars($e['title']) ?>">
                   <?= htmlspecialchars($e['title']) ?>
-                  <a href="calendar.php?delete_event=<?= $e['id'] ?>&month=<?= $month ?>&year=<?= $year ?>"
-                     onclick="return confirm('Delete this event?');"
-                     style="color:inherit; float:right; opacity:0.7;">✕</a>
+                   <form method="POST" style="display:inline; float:right;">
+                     <input type="hidden" name="action" value="delete_event">
+                     <input type="hidden" name="event_id" value="<?= $e['id'] ?>">
+                     <input type="hidden" name="csrf_token" value="<?= generateCsrfToken() ?>">
+                     <button type="submit" onclick="return confirm('Delete this event?');" style="color:inherit; background:none; border:0; padding:0; opacity:0.7;">✕</button>
+                   </form>
                 </div>
               <?php endforeach; ?>
             </div>
@@ -146,6 +153,7 @@ $dayCodeMap = [1=>'MON', 2=>'TUE', 3=>'WED', 4=>'THU', 5=>'FRI', 6=>'SAT', 7=>'S
         <h2>Add Event</h2>
         <form method="POST">
           <input type="hidden" name="action" value="add_event">
+          <input type="hidden" name="csrf_token" value="<?= generateCsrfToken() ?>">
           <div class="field">
             <label>Title</label>
             <input type="text" name="title" placeholder="e.g. Project deadline" required>
@@ -178,6 +186,6 @@ $dayCodeMap = [1=>'MON', 2=>'TUE', 3=>'WED', 4=>'THU', 5=>'FRI', 6=>'SAT', 7=>'S
     </div>
   </div>
 </div>
-<script src="assets/js/main.js"></script>
+<script src="assets/js/main.js?v=3"></script>
 </body>
 </html>

@@ -10,42 +10,60 @@ $days = ['MON' => 'Monday', 'TUE' => 'Tuesday', 'WED' => 'Wednesday', 'THU' => '
 
 // ---------- Handle: Add or Update Schedule ----------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'save_schedule') {
-    $subject = trim($_POST['subject'] ?? '');
-    $day = $_POST['day_of_week'] ?? '';
-    $startTime = $_POST['start_time'] ?? '';
-    $endTime = $_POST['end_time'] ?? '';
-    $room = trim($_POST['room'] ?? '');
-    $faculty = trim($_POST['faculty'] ?? '');
-    $editId = $_POST['edit_id'] ?? '';
-
-    if ($subject === '') {
-        $error = "Subject name is required.";
-    } elseif (!array_key_exists($day, $days)) {
-        $error = "Please select a valid day.";
-    } elseif ($startTime === '' || $endTime === '') {
-        $error = "Start and end time are required.";
-    } elseif ($startTime >= $endTime) {
-        $error = "End time must be after start time.";
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+        $error = 'Invalid request. Please try again.';
     } else {
-        if ($editId !== '') {
-            // Update existing
-            $stmt = $pdo->prepare("UPDATE schedules SET subject=?, day_of_week=?, start_time=?, end_time=?, room=?, faculty=? WHERE id=? AND user_id=?");
-            $stmt->execute([$subject, $day, $startTime, $endTime, $room, $faculty, (int)$editId, $userId]);
-            header('Location: schedule.php?updated=1');
+        $subject = trim($_POST['subject'] ?? '');
+        $day = $_POST['day_of_week'] ?? '';
+        $startTime = $_POST['start_time'] ?? '';
+        $endTime = $_POST['end_time'] ?? '';
+        $room = trim($_POST['room'] ?? '');
+        $faculty = trim($_POST['faculty'] ?? '');
+        $editId = $_POST['edit_id'] ?? '';
+
+        if ($subject === '') {
+            $error = "Subject name is required.";
+        } elseif (!array_key_exists($day, $days)) {
+            $error = "Please select a valid day.";
+        } elseif ($startTime === '' || $endTime === '') {
+            $error = "Start and end time are required.";
+        } elseif ($startTime >= $endTime) {
+            $error = "End time must be after start time.";
         } else {
-            // Insert new
-            $stmt = $pdo->prepare("INSERT INTO schedules (user_id, subject, day_of_week, start_time, end_time, room, faculty, source) VALUES (?, ?, ?, ?, ?, ?, ?, 'manual')");
-            $stmt->execute([$userId, $subject, $day, $startTime, $endTime, $room, $faculty]);
-            header('Location: schedule.php?added=1');
+            // Check for schedule conflicts
+            $conflictStmt = $pdo->prepare("
+                SELECT * FROM schedules
+                WHERE user_id = ? AND day_of_week = ?
+                AND id != ?
+                AND ((start_time < ? AND end_time > ?) OR (start_time < ? AND end_time > ?))
+            ");
+            $conflictStmt->execute([$userId, $day, $editId ?? 0, $endTime, $startTime, $endTime, $startTime]);
+            $conflict = $conflictStmt->fetch();
+            if ($conflict) {
+                $error = "Schedule conflict: {$conflict['subject']} ({$conflict['start_time']} - {$conflict['end_time']}) overlaps with this time.";
+            }
         }
-        exit;
+        if (!$error) {
+            if ($editId !== '') {
+                // Update existing
+                $stmt = $pdo->prepare("UPDATE schedules SET subject=?, day_of_week=?, start_time=?, end_time=?, room=?, faculty=? WHERE id=? AND user_id=?");
+                $stmt->execute([$subject, $day, $startTime, $endTime, $room, $faculty, (int)$editId, $userId]);
+                header('Location: schedule.php?updated=1');
+            } else {
+                // Insert new
+                $stmt = $pdo->prepare("INSERT INTO schedules (user_id, subject, day_of_week, start_time, end_time, room, faculty, source) VALUES (?, ?, ?, ?, ?, ?, ?, 'manual')");
+                $stmt->execute([$userId, $subject, $day, $startTime, $endTime, $room, $faculty]);
+                header('Location: schedule.php?added=1');
+            }
+            exit;
+        }
     }
 }
 
 // ---------- Handle: Delete ----------
-if (isset($_GET['delete'])) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_schedule' && verifyCsrfToken($_POST['csrf_token'] ?? '')) {
     $stmt = $pdo->prepare("DELETE FROM schedules WHERE id = ? AND user_id = ?");
-    $stmt->execute([(int)$_GET['delete'], $userId]);
+    $stmt->execute([(int)($_POST['schedule_id'] ?? 0), $userId]);
     header('Location: schedule.php?deleted=1');
     exit;
 }
@@ -82,7 +100,7 @@ foreach ($allSchedules as $s) {
 <head>
 <meta charset="UTF-8">
 <title>Schedule - StudySys</title>
-<link rel="stylesheet" href="assets/css/style.css">
+<link rel="stylesheet" href="assets/css/style.css?v=2">
 </head>
 <body>
 <div class="app">
@@ -109,6 +127,7 @@ foreach ($allSchedules as $s) {
 </h2>
         <form method="POST">
           <input type="hidden" name="action" value="save_schedule">
+          <input type="hidden" name="csrf_token" value="<?= generateCsrfToken() ?>">
           <input type="hidden" name="edit_id" value="<?= $editRow ? $editRow['id'] : '' ?>">
 
           <div class="field">
@@ -186,8 +205,12 @@ foreach ($allSchedules as $s) {
                   </div>
                   <div style="white-space:nowrap;">
                     <a href="schedule.php?edit=<?= $s['id'] ?>" class="del-link" style="color:var(--accent);">Edit</a>
-                    <a href="schedule.php?delete=<?= $s['id'] ?>" class="del-link"
-                       onclick="return confirm('Delete this class?');">✕</a>
+                     <form method="POST" style="display:inline;">
+                       <input type="hidden" name="action" value="delete_schedule">
+                       <input type="hidden" name="schedule_id" value="<?= $s['id'] ?>">
+                       <input type="hidden" name="csrf_token" value="<?= generateCsrfToken() ?>">
+                       <button type="submit" class="del-link" style="background:none; border:0; padding:0;" onclick="return confirm('Delete this class?');">✕</button>
+                     </form>
                   </div>
                 </div>
               <?php endforeach; ?>
@@ -198,6 +221,6 @@ foreach ($allSchedules as $s) {
     </div>
   </div>
 </div>
-<script src="assets/js/main.js"></script>
+<script src="assets/js/main.js?v=3"></script>
 </body>
 </html>

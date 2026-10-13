@@ -13,12 +13,10 @@ $activePage = $activePage ?? '';
   <div class="logout">
     <a href="logout.php">&larr; Log out</a>
     <div class="theme-toggle">
-      
-  <button id="themeToggleBtn" type="button">
-    <span id="themeIcon">🌙</span> <span id="themeLabel">Dark Mode</span>
-  </button>
-
-  
-</div>
+      <button id="themeToggleBtn" type="button" aria-label="Toggle light and dark mode" onclick="toggleTheme()">
+        <span id="themeIcon">🌙</span>
+        <span id="themeLabel">Dark Mode</span>
+      </button>
+    </div>
   </div>
 </div>

@@ -9,74 +9,90 @@ $proposedRows = [];
 
 // ---------- Step 1: Handle image upload + OCR ----------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'upload_scan') {
-    if (empty($_FILES['coe_image']['tmp_name'])) {
-        $error = "Please choose an image to upload.";
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+        $error = 'Invalid request. Please try again.';
     } else {
-        $uploadDir = __DIR__ . '/uploads/schedules/';
-        $rawPath = $uploadDir . $userId . '_' . time() . '_raw.png';
-        $processedPath = $uploadDir . $userId . '_' . time() . '_processed.png';
+        $upload = $_FILES['coe_image'] ?? null;
+        if (!$upload || $upload['error'] !== UPLOAD_ERR_OK) {
+            $error = "Please choose an image to upload.";
+        } elseif ($upload['size'] > 8 * 1024 * 1024 || @getimagesize($upload['tmp_name']) === false) {
+            $error = "Please upload a valid JPG or PNG image smaller than 8 MB.";
+        } else {
+            $uploadDir = __DIR__ . '/uploads/schedules/';
+            $rawPath = $uploadDir . $userId . '_' . time() . '_raw.png';
+            $processedPath = $uploadDir . $userId . '_' . time() . '_processed.png';
 
-        move_uploaded_file($_FILES['coe_image']['tmp_name'], $rawPath);
+            if (!move_uploaded_file($upload['tmp_name'], $rawPath)) {
+                $error = "The image could not be uploaded. Please try again.";
+            }
 
-        try {
-            preprocess_schedule_image($rawPath, $processedPath);
-            $imgInfo = getimagesize($processedPath);
-            $imgWidth = $imgInfo[0];
-
-            $tsvText = run_tesseract_tsv($processedPath);
-            $wordRows = parse_tsv($tsvText);
-            $bucketedLines = group_into_lines($wordRows, $imgWidth);
-            $subjectRows = extract_subject_rows($bucketedLines);
-
-            // Flatten: one proposed schedule row per (subject, schedule entry)
-            foreach ($subjectRows as $subj) {
-                foreach ($subj['entries'] as $entry) {
-                    $parsed = parse_schedule_text($entry['schedule_raw']);
-                    $roomParsed = parse_room_text($entry['room_raw']);
-                    $proposedRows[] = [
-                        'subject_code' => $subj['subject_code'],
-                        'subject_name' => $subj['subject_name'],
-                        'faculty' => $subj['faculty'],
-                        'day' => $parsed['day'],
-                        'start_time' => $parsed['start_time'],
-                        'end_time' => $parsed['end_time'],
-                        'room' => $roomParsed['room'],
-                    ];
+            try {
+                if ($error) {
+                    throw new RuntimeException($error);
                 }
-            }
+                preprocess_schedule_image($rawPath, $processedPath);
+                $imgInfo = getimagesize($processedPath);
+                $imgWidth = $imgInfo[0];
 
-            if (empty($proposedRows)) {
-                $error = "Couldn't detect a schedule table in that image. Try a clearer, well-lit photo.";
+                $tsvText = run_tesseract_tsv($processedPath);
+                $wordRows = parse_tsv($tsvText);
+                $bucketedLines = group_into_lines($wordRows, $imgWidth);
+                $subjectRows = extract_subject_rows($bucketedLines);
+
+                // Flatten: one proposed schedule row per (subject, schedule entry)
+                foreach ($subjectRows as $subj) {
+                    foreach ($subj['entries'] as $entry) {
+                        $parsed = parse_schedule_text($entry['schedule_raw']);
+                        $roomParsed = parse_room_text($entry['room_raw']);
+                        $proposedRows[] = [
+                            'subject_code' => $subj['subject_code'],
+                            'subject_name' => $subj['subject_name'],
+                            'faculty' => $subj['faculty'],
+                            'day' => $parsed['day'],
+                            'start_time' => $parsed['start_time'],
+                            'end_time' => $parsed['end_time'],
+                            'room' => $roomParsed['room'],
+                        ];
+                    }
+                }
+
+                if (empty($proposedRows)) {
+                    $error = "Couldn't detect a schedule table in that image. Try a clearer, well-lit photo.";
+                }
+            } catch (Exception $e) {
+                $error = "Scan failed: " . $e->getMessage();
             }
-        } catch (Exception $e) {
-            $error = "Scan failed: " . $e->getMessage();
         }
     }
 }
 
 // ---------- Step 2: Handle confirm & save ----------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'save_scanned') {
-    $saved = 0;
-    foreach ($_POST['rows'] as $row) {
-        if (empty($row['include'])) continue; // skipped/unchecked row
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+        $error = 'Invalid request. Please try again.';
+    } else {
+        $saved = 0;
+        foreach (($_POST['rows'] ?? []) as $row) {
+            if (empty($row['include'])) continue; // skipped/unchecked row
 
-        $subject = trim($row['subject'] ?? '');
-        $day = $row['day'] ?? '';
-        $start = $row['start_time'] ?? '';
-        $end = $row['end_time'] ?? '';
-        $room = trim($row['room'] ?? '');
-        $faculty = trim($row['faculty'] ?? '');
+            $subject = trim($row['subject'] ?? '');
+            $day = $row['day'] ?? '';
+            $start = $row['start_time'] ?? '';
+            $end = $row['end_time'] ?? '';
+            $room = trim($row['room'] ?? '');
+            $faculty = trim($row['faculty'] ?? '');
 
-        if ($subject === '' || $start === '' || $end === '' || !in_array($day, ['MON','TUE','WED','THU','FRI','SAT','SUN'])) {
-            continue; // skip incomplete rows silently — user will notice missing ones and can add manually
+            if ($subject === '' || $start === '' || $end === '' || !in_array($day, ['MON','TUE','WED','THU','FRI','SAT','SUN'])) {
+                continue; // skip incomplete rows silently — user will notice missing ones and can add manually
+            }
+
+            $stmt = $pdo->prepare("INSERT INTO schedules (user_id, subject, day_of_week, start_time, end_time, room, faculty, source) VALUES (?, ?, ?, ?, ?, ?, ?, 'scanned')");
+            $stmt->execute([$userId, $subject, $day, $start, $end, $room, $faculty]);
+            $saved++;
         }
-
-        $stmt = $pdo->prepare("INSERT INTO schedules (user_id, subject, day_of_week, start_time, end_time, room, faculty, source) VALUES (?, ?, ?, ?, ?, ?, ?, 'scanned')");
-        $stmt->execute([$userId, $subject, $day, $start, $end, $room, $faculty]);
-        $saved++;
+        header('Location: schedule.php?scanned=' . $saved);
+        exit;
     }
-    header('Location: schedule.php?scanned=' . $saved);
-    exit;
 }
 
 $days = ['MON'=>'Mon','TUE'=>'Tue','WED'=>'Wed','THU'=>'Thu','FRI'=>'Fri','SAT'=>'Sat','SUN'=>'Sun'];
@@ -86,7 +102,7 @@ $days = ['MON'=>'Mon','TUE'=>'Tue','WED'=>'Wed','THU'=>'Thu','FRI'=>'Fri','SAT'=
 <head>
 <meta charset="UTF-8">
 <title>Scan Schedule - StudySys</title>
-<link rel="stylesheet" href="assets/css/style.css">
+<link rel="stylesheet" href="assets/css/style.css?v=2">
 </head>
 <body>
 <div class="app">
@@ -108,6 +124,7 @@ $days = ['MON'=>'Mon','TUE'=>'Tue','WED'=>'Wed','THU'=>'Thu','FRI'=>'Fri','SAT'=
         <h2>Upload COE Photo</h2>
         <form method="POST" enctype="multipart/form-data">
           <input type="hidden" name="action" value="upload_scan">
+          <input type="hidden" name="csrf_token" value="<?= generateCsrfToken() ?>">
           <div class="field">
             <label>Image file (JPG or PNG)</label>
             <input type="file" name="coe_image" accept="image/jpeg,image/png" required>
@@ -132,6 +149,7 @@ $days = ['MON'=>'Mon','TUE'=>'Tue','WED'=>'Wed','THU'=>'Thu','FRI'=>'Fri','SAT'=
 
         <form method="POST">
           <input type="hidden" name="action" value="save_scanned">
+          <input type="hidden" name="csrf_token" value="<?= generateCsrfToken() ?>">
           <table class="txn-table">
             <thead>
               <tr>
@@ -182,6 +200,6 @@ $days = ['MON'=>'Mon','TUE'=>'Tue','WED'=>'Wed','THU'=>'Thu','FRI'=>'Fri','SAT'=
     <?php endif; ?>
   </div>
 </div>
-<script src="assets/js/main.js"></script>
+<script src="assets/js/main.js?v=3"></script>
 </body>
 </html>

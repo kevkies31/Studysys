@@ -1,7 +1,16 @@
-// Ripple effect on any nav link or button click
+// Apply the saved theme as soon as this shared script loads.
+(function () {
+  let saved = 'dark';
+  try {
+    saved = localStorage.getItem('studysys_theme') === 'light' ? 'light' : 'dark';
+  } catch (e) {}
+  document.documentElement.dataset.theme = saved;
+})();
+
+// Ripple effect on nav links and app buttons.
 document.addEventListener('click', function (e) {
-  const target = e.target.closest('.sidebar nav a, .btn');
-  if (!target) return;
+  const target = e.target.closest ? e.target.closest('.sidebar nav a, .btn') : null;
+  if (!target || target.id === 'themeToggleBtn') return;
 
   const rect = target.getBoundingClientRect();
   const ripple = document.createElement('span');
@@ -29,28 +38,23 @@ document.querySelectorAll('form').forEach(function (form) {
 
 // ---------- Dark / Light theme ----------
 (function () {
-  const saved = localStorage.getItem('studysys_theme') || 'dark';
-  if (saved === 'light') document.documentElement.setAttribute('data-theme', 'light');
-
   const btn = document.getElementById('themeToggleBtn');
-  if (!btn) return; // login/signup pages don't have the sidebar toggle
+  const root = document.documentElement;
 
-  function updateLabel() {
-    const isLight = document.documentElement.getAttribute('data-theme') === 'light';
-    document.getElementById('themeIcon').textContent = isLight ? '☀️' : '🌙';
-    document.getElementById('themeLabel').textContent = isLight ? 'Light Mode' : 'Dark Mode';
-  }
-  updateLabel();
+  window.updateThemeLabel = function () {
+    const isLight = root.dataset.theme === 'light';
+    const icon = document.getElementById('themeIcon');
+    const label = document.getElementById('themeLabel');
+    if (icon) icon.textContent = isLight ? '☀️' : '🌙';
+    if (label) label.textContent = isLight ? 'Light Mode' : 'Dark Mode';
+  };
 
-  btn.addEventListener('click', function () {
-    const isLight = document.documentElement.getAttribute('data-theme') === 'light';
-    if (isLight) {
-      document.documentElement.removeAttribute('data-theme');
-      localStorage.setItem('studysys_theme', 'dark');
-    } else {
-      document.documentElement.setAttribute('data-theme', 'light');
-      localStorage.setItem('studysys_theme', 'light');
-    }
-    updateLabel();
-  });
+  window.toggleTheme = function () {
+    const theme = root.dataset.theme === 'light' ? 'dark' : 'light';
+    root.dataset.theme = theme;
+    try { localStorage.setItem('studysys_theme', theme); } catch (e) {}
+    window.updateThemeLabel();
+  };
+
+  if (btn) window.updateThemeLabel();
 })();

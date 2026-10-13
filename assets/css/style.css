@@ -1,18 +1,3 @@
-[data-theme="light"] {
-  --bg: #f4f5f8;
-  --panel: #ffffff;
-  --panel-light: #eef0f5;
-  --border: #dde1e8;
-  --text: #1c1e26;
-  --text-dim: #6b7180;
-  --accent: #6366f1;
-  --accent-hover: #4f46e5;
-  --success: #16a34a;
-  --danger: #dc2626;
-}
-
-
-
 :root {
   --bg: #0f1117;
   --panel: #171a23;
@@ -25,7 +10,19 @@
   --success: #22c55e;
   --danger: #ef4444;
   --radius: 10px;
-  
+}
+
+html[data-theme="light"] {
+  --bg: #f4f5f8;
+  --panel: #ffffff;
+  --panel-light: #eef0f5;
+  --border: #dde1e8;
+  --text: #1c1e26;
+  --text-dim: #6b7180;
+  --accent: #6366f1;
+  --accent-hover: #4f46e5;
+  --success: #16a34a;
+  --danger: #dc2626;
 }
 
 * { box-sizing: border-box; }
@@ -395,3 +392,21 @@ a, button, input, .card, .sidebar nav a {
 
 .theme-toggle button:hover { color: var(--text); border-color: var(--accent); }
 
+/* ---------- Bar chart ---------- */
+.bar-track {
+  background: var(--panel-light);
+  border-radius: 4px;
+  height: 8px;
+  overflow: hidden;
+}
+
+.bar-fill {
+  background: var(--accent);
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.bar-fill.bar-over {
+  background: var(--danger);
+}
